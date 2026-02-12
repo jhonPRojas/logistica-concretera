@@ -24,28 +24,39 @@ if uploaded_file:
 
     df = pd.read_excel(uploaded_file)
 
-    # Convertir columnas de tiempo a minutos
+    # -------------------------
+    # CONVERSIÓN DE TIEMPOS
+    # -------------------------
     if "Espera" in df.columns:
         df["Espera_min"] = df["Espera"] * 1440
     else:
         st.error("No se encontró la columna 'Espera'")
         st.stop()
 
-    # KPIs principales
+    # Convertir hora obra si existe
+    if "HrObra" in df.columns:
+        df["Hora"] = pd.to_datetime(df["HrObra"], errors="coerce").dt.hour
+
+    # -------------------------
+    # KPIs PRINCIPALES
+    # -------------------------
     total_viajes = len(df)
     espera_promedio = df["Espera_min"].mean()
     costo_total = df["Espera_min"].sum() * costo_minuto
 
-    col1, col2, col3 = st.columns(3)
+    cliente_critico = df.groupby("Cliente")["Espera_min"].mean().idxmax()
+
+    col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("📦 Total Viajes", total_viajes)
     col2.metric("⏱ Espera Promedio (min)", round(espera_promedio,1))
-    col3.metric("💰 Costo Total Espera (S/)", f"{round(costo_total,2):,}")
+    col3.metric("💰 Costo Total (S/)", f"{round(costo_total,2):,}")
+    col4.metric("🔴 Cliente más lento", cliente_critico)
 
     st.divider()
 
     # -------------------------
-    # ANÁLISIS POR CLIENTE
+    # RANKING CLIENTES
     # -------------------------
     st.subheader("📊 Ranking de Clientes")
 
@@ -65,8 +76,32 @@ if uploaded_file:
     resumen_cliente = resumen_cliente.sort_values(by="Espera_Promedio", ascending=False)
 
     st.dataframe(resumen_cliente)
-
     st.bar_chart(resumen_cliente.set_index("Cliente")["Espera_Promedio"])
+
+    st.divider()
+
+    # -------------------------
+    # ANÁLISIS POR HORA
+    # -------------------------
+    if "Hora" in df.columns:
+        st.subheader("📈 Espera Promedio por Hora")
+
+        espera_hora = df.groupby("Hora")["Espera_min"].mean()
+        st.line_chart(espera_hora)
+
+    st.divider()
+
+    # -------------------------
+    # TENDENCIA MENSUAL
+    # -------------------------
+    if "Fecha" in df.columns:
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df["Mes"] = df["Fecha"].dt.to_period("M")
+
+        st.subheader("📅 Tendencia Mensual de Espera")
+
+        tendencia = df.groupby("Mes")["Espera_min"].mean()
+        st.line_chart(tendencia)
 
     st.divider()
 
