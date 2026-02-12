@@ -1,109 +1,133 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import datetime
+import numpy as np
 
-# ---------- CONFIGURACIÓN ----------
-USUARIO_CORRECTO = "admin"
-CLAVE_CORRECTA = "1234"
-st.subheader("📤 Subir Excel de tiempos")
+st.set_page_config(page_title="Dashboard Logístico Concretera", layout="wide")
 
-archivo_tiempos = st.file_uploader("Sube tu archivo de tiempos", type=["xlsx"])
+st.title("🚛 Dashboard Ejecutivo - Logística Concretera")
 
-if archivo_tiempos is not None:
-    df_tiempos = pd.read_excel(archivo_tiempos)
+# -------------------------
+# CONFIGURACIÓN
+# -------------------------
+st.sidebar.header("⚙️ Configuración")
 
-    st.success("Archivo cargado correctamente")
-    st.write("Vista previa:")
-    st.dataframe(df_tiempos, use_container_width=True)
+costo_minuto = st.sidebar.number_input(
+    "Costo por minuto de espera (S/)",
+    min_value=0.0,
+    value=5.0,
+    step=0.5
+)
 
-    # Convertir fecha si existe
-    if "FECHA" in df_tiempos.columns:
-        df_tiempos["FECHA"] = pd.to_datetime(df_tiempos["FECHA"])
+uploaded_file = st.file_uploader("📂 Subir Excel exportado del sistema", type=["xlsx"])
 
-    # Ejemplo gráfico si existe temperatura
-    if "TEMPERATURA DEL CONCRETO" in df_tiempos.columns:
-        st.subheader("📈 Temperatura del concreto")
-        st.line_chart(df_tiempos["TEMPERATUR]()
+if uploaded_file:
 
-st.set_page_config(page_title="Logística Concretera", layout="wide")
+    df = pd.read_excel(uploaded_file)
 
-# ---------- LOGIN ----------
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
+    # -------------------------
+    # CONVERSIÓN DE TIEMPOS
+    # -------------------------
+    if "Espera" in df.columns:
+        df["Espera_min"] = df["Espera"] * 1440
+    else:
+        st.error("No se encontró la columna 'Espera'")
+        st.stop()
 
-def login():
-    st.title("🔐 Acceso Privado - Logística Concretera")
-    usuario = st.text_input("Usuario")
-    clave = st.text_input("Contraseña", type="password")
+    # Convertir hora obra si existe
+    if "HrObra" in df.columns:
+        df["Hora"] = pd.to_datetime(df["HrObra"], errors="coerce").dt.hour
 
-    if st.button("Ingresar"):
-        if usuario == USUARIO_CORRECTO and clave == CLAVE_CORRECTA:
-            st.session_state.autenticado = True
-            st.success("Acceso concedido")
-            st.rerun()
-        else:
-            st.error("Usuario o contraseña incorrectos")
+    # -------------------------
+    # KPIs PRINCIPALES
+    # -------------------------
+    total_viajes = len(df)
+    espera_promedio = df["Espera_min"].mean()
+    costo_total = df["Espera_min"].sum() * costo_minuto
 
-if not st.session_state.autenticado:
-    login()
-    st.stop()
+    cliente_critico = df.groupby("Cliente")["Espera_min"].mean().idxmax()
 
-# ---------- APP PRINCIPAL ----------
-st.title("🚛 Sistema de Logística – Concretera")
+    col1, col2, col3, col4 = st.columns(4)
 
-if "data" not in st.session_state:
-    st.session_state.data = pd.DataFrame(columns=[
-        "Fecha", "Obra", "m3", "Precio x m3", "Total"
-    ])
+    col1.metric("📦 Total Viajes", total_viajes)
+    col2.metric("⏱ Espera Promedio (min)", round(espera_promedio,1))
+    col3.metric("💰 Costo Total (S/)", f"{round(costo_total,2):,}")
+    col4.metric("🔴 Cliente más lento", cliente_critico)
 
-st.sidebar.header("📌 Registrar despacho")
+    st.divider()
 
-fecha = st.sidebar.date_input("Fecha", datetime.today())
-obra = st.sidebar.text_input("Nombre de la Obra")
-m3 = st.sidebar.number_input("Metros cúbicos (m3)", min_value=0.0)
-precio = st.sidebar.number_input("Precio por m3 (S/)", min_value=0.0)
+    # -------------------------
+    # RANKING CLIENTES
+    # -------------------------
+    st.subheader("📊 Ranking de Clientes")
 
-if st.sidebar.button("Agregar despacho"):
-    total = m3 * precio
-    nuevo = pd.DataFrame([[fecha, obra, m3, precio, total]],
-                         columns=st.session_state.data.columns)
-    st.session_state.data = pd.concat([st.session_state.data, nuevo], ignore_index=True)
-    st.success("Despacho agregado correctamente")
+    resumen_cliente = df.groupby("Cliente").agg(
+        Viajes=("Cliente","count"),
+        Espera_Promedio=("Espera_min","mean"),
+        Espera_Total=("Espera_min","sum")
+    ).reset_index()
 
-st.subheader("📋 Registro de despachos")
-st.dataframe(st.session_state.data, use_container_width=True)
+    resumen_cliente["Costo_Estimado"] = resumen_cliente["Espera_Total"] * costo_minuto
 
-if not st.session_state.data.empty:
-    df = st.session_state.data.copy()
+    resumen_cliente["Clasificación"] = np.where(
+        resumen_cliente["Espera_Promedio"] > 20, "🔴 CRÍTICO",
+        np.where(resumen_cliente["Espera_Promedio"] > 15, "🟡 LENTO", "🟢 EFICIENTE")
+    )
 
-    total_m3 = df["m3"].sum()
-    total_ingresos = df["Total"].sum()
-    promedio_precio = df["Precio x m3"].mean()
+    resumen_cliente = resumen_cliente.sort_values(by="Espera_Promedio", ascending=False)
 
-    col1, col2, col3 = st.columns(3)
+    st.dataframe(resumen_cliente)
+    st.bar_chart(resumen_cliente.set_index("Cliente")["Espera_Promedio"])
 
-    col1.metric("Total m3 vendidos", f"{total_m3:.2f}")
-    col2.metric("Ingresos totales (S/)", f"{total_ingresos:.2f}")
-    col3.metric("Precio promedio (S/)", f"{promedio_precio:.2f}")
+    st.divider()
 
-    st.subheader("📈 Evolución de ingresos")
-    df_group = df.groupby("Fecha")["Total"].sum()
+    # -------------------------
+    # ANÁLISIS POR HORA
+    # -------------------------
+    if "Hora" in df.columns:
+        st.subheader("📈 Espera Promedio por Hora")
 
-    fig, ax = plt.subplots()
-    df_group.plot(kind="line", marker="o", ax=ax)
-    ax.set_ylabel("Ingresos (S/)")
-    ax.set_xlabel("Fecha")
-    st.pyplot(fig)
+        espera_hora = df.groupby("Hora")["Espera_min"].mean()
+        st.line_chart(espera_hora)
 
-    archivo = "reporte_logistica.xlsx"
-    df.to_excel(archivo, index=False)
+    st.divider()
 
-    with open(archivo, "rb") as f:
-        st.download_button("Descargar Excel", f, file_name=archivo)
+    # -------------------------
+    # TENDENCIA MENSUAL
+    # -------------------------
+    if "Fecha" in df.columns:
+        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
+        df["Mes"] = df["Fecha"].dt.to_period("M")
 
-# ---------- BOTÓN CERRAR SESIÓN ----------
-if st.sidebar.button("Cerrar sesión"):
-    st.session_state.autenticado = False
-    st.rerun()
+        st.subheader("📅 Tendencia Mensual de Espera")
+
+        tendencia = df.groupby("Mes")["Espera_min"].mean()
+        st.line_chart(tendencia)
+
+    st.divider()
+
+    # -------------------------
+    # ALERTAS
+    # -------------------------
+    st.subheader("🚨 Alertas Automáticas")
+
+    clientes_criticos = resumen_cliente[resumen_cliente["Espera_Promedio"] > 20]
+
+    if len(clientes_criticos) > 0:
+        for _, row in clientes_criticos.iterrows():
+            st.error(
+                f"""
+                🔴 CLIENTE CRÍTICO: {row['Cliente']}
+
+                Espera promedio: {round(row['Espera_Promedio'],1)} min  
+                Viajes: {row['Viajes']}  
+                Impacto estimado: S/ {round(row['Costo_Estimado'],2):,}
+
+                Recomendación: Programar llegada +15 min.
+                """
+            )
+    else:
+        st.success("No hay clientes críticos detectados.")
+
+else:
+    st.info("Sube el archivo Excel exportado del sistema para comenzar.")
 
