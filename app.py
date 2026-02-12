@@ -3,11 +3,36 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 
+# ---------- CONFIGURACIÓN ----------
+USUARIO_CORRECTO = "admin"
+CLAVE_CORRECTA = "1234"
+
 st.set_page_config(page_title="Logística Concretera", layout="wide")
 
+# ---------- LOGIN ----------
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+def login():
+    st.title("🔐 Acceso Privado - Logística Concretera")
+    usuario = st.text_input("Usuario")
+    clave = st.text_input("Contraseña", type="password")
+
+    if st.button("Ingresar"):
+        if usuario == USUARIO_CORRECTO and clave == CLAVE_CORRECTA:
+            st.session_state.autenticado = True
+            st.success("Acceso concedido")
+            st.rerun()
+        else:
+            st.error("Usuario o contraseña incorrectos")
+
+if not st.session_state.autenticado:
+    login()
+    st.stop()
+
+# ---------- APP PRINCIPAL ----------
 st.title("🚛 Sistema de Logística – Concretera")
 
-# Inicializar datos
 if "data" not in st.session_state:
     st.session_state.data = pd.DataFrame(columns=[
         "Fecha", "Obra", "m3", "Precio x m3", "Total"
@@ -27,15 +52,12 @@ if st.sidebar.button("Agregar despacho"):
     st.session_state.data = pd.concat([st.session_state.data, nuevo], ignore_index=True)
     st.success("Despacho agregado correctamente")
 
-# Mostrar tabla
 st.subheader("📋 Registro de despachos")
 st.dataframe(st.session_state.data, use_container_width=True)
 
 if not st.session_state.data.empty:
-
     df = st.session_state.data.copy()
 
-    # Métricas superiores
     total_m3 = df["m3"].sum()
     total_ingresos = df["Total"].sum()
     promedio_precio = df["Precio x m3"].mean()
@@ -46,7 +68,6 @@ if not st.session_state.data.empty:
     col2.metric("Ingresos totales (S/)", f"{total_ingresos:.2f}")
     col3.metric("Precio promedio (S/)", f"{promedio_precio:.2f}")
 
-    # Gráfico
     st.subheader("📈 Evolución de ingresos")
     df_group = df.groupby("Fecha")["Total"].sum()
 
@@ -56,10 +77,14 @@ if not st.session_state.data.empty:
     ax.set_xlabel("Fecha")
     st.pyplot(fig)
 
-    # Descargar Excel
-    st.subheader("⬇ Descargar reporte")
     archivo = "reporte_logistica.xlsx"
     df.to_excel(archivo, index=False)
 
     with open(archivo, "rb") as f:
         st.download_button("Descargar Excel", f, file_name=archivo)
+
+# ---------- BOTÓN CERRAR SESIÓN ----------
+if st.sidebar.button("Cerrar sesión"):
+    st.session_state.autenticado = False
+    st.rerun()
+
