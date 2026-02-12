@@ -1,132 +1,65 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
+from datetime import datetime
 
-st.set_page_config(page_title="Dashboard Logístico Concretera", layout="wide")
+st.set_page_config(page_title="Logística Concretera", layout="wide")
 
-st.title("🚛 Dashboard Ejecutivo - Logística Concretera")
+st.title("🚛 Sistema de Logística – Concretera")
 
-# -------------------------
-# CONFIGURACIÓN
-# -------------------------
-st.sidebar.header("⚙️ Configuración")
+# Inicializar datos
+if "data" not in st.session_state:
+    st.session_state.data = pd.DataFrame(columns=[
+        "Fecha", "Obra", "m3", "Precio x m3", "Total"
+    ])
 
-costo_minuto = st.sidebar.number_input(
-    "Costo por minuto de espera (S/)",
-    min_value=0.0,
-    value=5.0,
-    step=0.5
-)
+st.sidebar.header("📌 Registrar despacho")
 
-uploaded_file = st.file_uploader("📂 Subir Excel exportado del sistema", type=["xlsx"])
+fecha = st.sidebar.date_input("Fecha", datetime.today())
+obra = st.sidebar.text_input("Nombre de la Obra")
+m3 = st.sidebar.number_input("Metros cúbicos (m3)", min_value=0.0)
+precio = st.sidebar.number_input("Precio por m3 (S/)", min_value=0.0)
 
-if uploaded_file:
+if st.sidebar.button("Agregar despacho"):
+    total = m3 * precio
+    nuevo = pd.DataFrame([[fecha, obra, m3, precio, total]],
+                         columns=st.session_state.data.columns)
+    st.session_state.data = pd.concat([st.session_state.data, nuevo], ignore_index=True)
+    st.success("Despacho agregado correctamente")
 
-    df = pd.read_excel(uploaded_file)
+# Mostrar tabla
+st.subheader("📋 Registro de despachos")
+st.dataframe(st.session_state.data, use_container_width=True)
 
-    # -------------------------
-    # CONVERSIÓN DE TIEMPOS
-    # -------------------------
-    if "Espera" in df.columns:
-        df["Espera_min"] = df["Espera"] * 1440
-    else:
-        st.error("No se encontró la columna 'Espera'")
-        st.stop()
+if not st.session_state.data.empty:
 
-    # Convertir hora obra si existe
-    if "HrObra" in df.columns:
-        df["Hora"] = pd.to_datetime(df["HrObra"], errors="coerce").dt.hour
+    df = st.session_state.data.copy()
 
-    # -------------------------
-    # KPIs PRINCIPALES
-    # -------------------------
-    total_viajes = len(df)
-    espera_promedio = df["Espera_min"].mean()
-    costo_total = df["Espera_min"].sum() * costo_minuto
+    # Métricas superiores
+    total_m3 = df["m3"].sum()
+    total_ingresos = df["Total"].sum()
+    promedio_precio = df["Precio x m3"].mean()
 
-    cliente_critico = df.groupby("Cliente")["Espera_min"].mean().idxmax()
+    col1, col2, col3 = st.columns(3)
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total m3 vendidos", f"{total_m3:.2f}")
+    col2.metric("Ingresos totales (S/)", f"{total_ingresos:.2f}")
+    col3.metric("Precio promedio (S/)", f"{promedio_precio:.2f}")
 
-    col1.metric("📦 Total Viajes", total_viajes)
-    col2.metric("⏱ Espera Promedio (min)", round(espera_promedio,1))
-    col3.metric("💰 Costo Total (S/)", f"{round(costo_total,2):,}")
-    col4.metric("🔴 Cliente más lento", cliente_critico)
+    # Gráfico
+    st.subheader("📈 Evolución de ingresos")
+    df_group = df.groupby("Fecha")["Total"].sum()
 
-    st.divider()
+    fig, ax = plt.subplots()
+    df_group.plot(kind="line", marker="o", ax=ax)
+    ax.set_ylabel("Ingresos (S/)")
+    ax.set_xlabel("Fecha")
+    st.pyplot(fig)
 
-    # -------------------------
-    # RANKING CLIENTES
-    # -------------------------
-    st.subheader("📊 Ranking de Clientes")
+    # Descargar Excel
+    st.subheader("⬇ Descargar reporte")
+    archivo = "reporte_logistica.xlsx"
+    df.to_excel(archivo, index=False)
 
-    resumen_cliente = df.groupby("Cliente").agg(
-        Viajes=("Cliente","count"),
-        Espera_Promedio=("Espera_min","mean"),
-        Espera_Total=("Espera_min","sum")
-    ).reset_index()
-
-    resumen_cliente["Costo_Estimado"] = resumen_cliente["Espera_Total"] * costo_minuto
-
-    resumen_cliente["Clasificación"] = np.where(
-        resumen_cliente["Espera_Promedio"] > 20, "🔴 CRÍTICO",
-        np.where(resumen_cliente["Espera_Promedio"] > 15, "🟡 LENTO", "🟢 EFICIENTE")
-    )
-
-    resumen_cliente = resumen_cliente.sort_values(by="Espera_Promedio", ascending=False)
-
-    st.dataframe(resumen_cliente)
-    st.bar_chart(resumen_cliente.set_index("Cliente")["Espera_Promedio"])
-
-    st.divider()
-
-    # -------------------------
-    # ANÁLISIS POR HORA
-    # -------------------------
-    if "Hora" in df.columns:
-        st.subheader("📈 Espera Promedio por Hora")
-
-        espera_hora = df.groupby("Hora")["Espera_min"].mean()
-        st.line_chart(espera_hora)
-
-    st.divider()
-
-    # -------------------------
-    # TENDENCIA MENSUAL
-    # -------------------------
-    if "Fecha" in df.columns:
-        df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce")
-        df["Mes"] = df["Fecha"].dt.to_period("M")
-
-        st.subheader("📅 Tendencia Mensual de Espera")
-
-        tendencia = df.groupby("Mes")["Espera_min"].mean()
-        st.line_chart(tendencia)
-
-    st.divider()
-
-    # -------------------------
-    # ALERTAS
-    # -------------------------
-    st.subheader("🚨 Alertas Automáticas")
-
-    clientes_criticos = resumen_cliente[resumen_cliente["Espera_Promedio"] > 20]
-
-    if len(clientes_criticos) > 0:
-        for _, row in clientes_criticos.iterrows():
-            st.error(
-                f"""
-                🔴 CLIENTE CRÍTICO: {row['Cliente']}
-
-                Espera promedio: {round(row['Espera_Promedio'],1)} min  
-                Viajes: {row['Viajes']}  
-                Impacto estimado: S/ {round(row['Costo_Estimado'],2):,}
-
-                Recomendación: Programar llegada +15 min.
-                """
-            )
-    else:
-        st.success("No hay clientes críticos detectados.")
-
-else:
-    st.info("Sube el archivo Excel exportado del sistema para comenzar.")
+    with open(archivo, "rb") as f:
+        st.download_button("Descargar Excel", f, file_name=archivo)
