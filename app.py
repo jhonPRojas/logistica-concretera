@@ -6,6 +6,25 @@ from datetime import datetime
 # ---------- CONFIGURACIÓN ----------
 USUARIO_CORRECTO = "admin"
 CLAVE_CORRECTA = "1234"
+st.subheader("📤 Subir Excel de tiempos")
+
+archivo_tiempos = st.file_uploader("Sube tu archivo de tiempos", type=["xlsx"])
+
+if archivo_tiempos is not None:
+    df_tiempos = pd.read_excel(archivo_tiempos)
+
+    st.success("Archivo cargado correctamente")
+    st.write("Vista previa:")
+    st.dataframe(df_tiempos, use_container_width=True)
+
+    # Convertir fecha si existe
+    if "FECHA" in df_tiempos.columns:
+        df_tiempos["FECHA"] = pd.to_datetime(df_tiempos["FECHA"])
+
+    # Ejemplo gráfico si existe temperatura
+    if "TEMPERATURA DEL CONCRETO" in df_tiempos.columns:
+        st.subheader("📈 Temperatura del concreto")
+        st.line_chart(df_tiempos["TEMPERATUR]()
 
 st.set_page_config(page_title="Logística Concretera", layout="wide")
 
